@@ -188,6 +188,8 @@ def save_model(args, save_path, model, loss, metrics):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
     model_name = model.__class__.__name__
     checkpoint_name = timestamp + "_" + model_name
+    if not os.path.exists(save_path):
+        os.mkdir(save_path)
     checkpoint_path = os.path.join(save_path, checkpoint_name)
     if not os.path.exists(checkpoint_path):
         os.mkdir(checkpoint_path)
