@@ -26,6 +26,13 @@ Dataset comes from paper [TESSERACT: eliminating experimental bias in malware cl
 * dataset partition info file
 
 ## directory structure
+data/
+|-- drug.csv        # drug节点
+|-- gene.csv        # gene节点
+|-- disease.csv     # disease节点
+|-- drug-interact-drug.csv  # drug-drug相互作用边
+|-- drug-interact-gene.csv  # drug-gene相互作用边
+|-- drug-treat-disease.csv  # drug-disease治疗边
 
 ## How to run
 1. Construct evolutionary network, run
