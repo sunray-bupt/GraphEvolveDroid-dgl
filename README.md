@@ -38,27 +38,33 @@ Dataset comes from [TESSERACT: eliminating experimental bias in malware classifi
 ```
 
 ## How to run
+
 1. Construct evolutionary network, run
-    ```bash
-    python3 evoluNetwork.py
-    ```
 
-2. Train
-    2.1 Train with customized hyperparameters, run
-        ```bash
-        python3 train.py --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
-        ```
+   ```bash
+   python3 evoluNetwork.py
+   ```
 
-    2.1 Train on GPU, run
-        ```bash
-        python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
-        ```
-    2.3 use `nohup`, run
-        ```bash
-        nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed >> nohup.out &
-        ```
+2. Train with customized hyperparameters, run
 
-3. Try different neighbor sampling strategy, run
-    ```bash
-    nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '-1' --num-layers 2 --detailed >> nohup.out &
-    ```
+   ```bash
+   python3 train.py --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
+   ```
+
+3. Train on GPU, run
+
+   ```bash
+   python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
+   ```
+
+   or use `nohup`, run
+
+   ```bash
+   nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed >> nohup.out &
+   ```
+
+4. Try different neighbor sampling strategy, run
+
+   ```bash
+   nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '-1' --num-layers 2 --detailed >> nohup.out &
+   ```
