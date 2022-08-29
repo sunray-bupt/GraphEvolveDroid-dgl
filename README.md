@@ -43,16 +43,17 @@ Dataset comes from [TESSERACT: eliminating experimental bias in malware classifi
     python3 evoluNetwork.py
     ```
 
-2. Train with customized hyperparameters, run
+2. Train
+2.1 Train with customized hyperparameters, run
     ```bash
     python3 train.py --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
     ```
 
-Train on GPU, run
+2.1 Train on GPU, run
     ```bash
     python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
     ```
-use `nohup`, run
+2.3 use `nohup`, run
     ```bash
     nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed >> nohup.out &
     ```
@@ -61,6 +62,3 @@ use `nohup`, run
     ```bash
     nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '-1' --num-layers 2 --detailed >> nohup.out &
     ```
-
-## Q&A
-TODO...
