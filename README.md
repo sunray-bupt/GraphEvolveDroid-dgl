@@ -20,15 +20,9 @@ This DGL example implements the GraphEvolveDroid model proposed in the paper [Gr
     ```
 
 ## Dataset
-Dataset comes from paper [TESSERACT: eliminating experimental bias in malware classification across space and time](https://dl.acm.org/doi/abs/10.5555/3361338.3361389).
+Dataset comes from [TESSERACT: eliminating experimental bias in malware classification across space and time](https://dl.acm.org/doi/abs/10.5555/3361338.3361389).
 
-### data file details
-* node feature matrix file
-* adjacency matrix file
-* labels of sample file
-* dataset partition info file
-
-## directory structure
+## Project structure
 ```bash
 <GraphEvovleDroid-dgl>
 |-- checkpoints     # save model state dict and performance
