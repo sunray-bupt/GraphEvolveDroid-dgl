@@ -14,7 +14,10 @@ This DGL example implements the GraphEvolveDroid model proposed in the paper [Gr
     conda env create -f environment.yml
     ```
 
-2. Activate the new environment: `conda activate pyto1.10`
+2. Activate the new environment:
+    ```bash
+    conda activate pyto1.10
+    ```
 
 ## Dataset
 Dataset comes from paper [TESSERACT: eliminating experimental bias in malware classification across space and time](https://dl.acm.org/doi/abs/10.5555/3361338.3361389).
@@ -26,33 +29,44 @@ Dataset comes from paper [TESSERACT: eliminating experimental bias in malware cl
 * dataset partition info file
 
 ## directory structure
-data/
-|-- drug.csv        # drug节点
-|-- gene.csv        # gene节点
-|-- disease.csv     # disease节点
-|-- drug-interact-drug.csv  # drug-drug相互作用边
-|-- drug-interact-gene.csv  # drug-gene相互作用边
-|-- drug-treat-disease.csv  # drug-disease治疗边
+```bash
+<GraphEvovleDroid-dgl>
+|-- checkpoints     # save model state dict and performance
+|   |-- history_records
+|   |__ reports.csv
+|
+|-- dataset.py      # construct customized DGL dataset class
+|-- evoluNetwork.py     # construct Android evolutionary network
+|-- model.py
+|-- train.py
+|-- README.md
+|__ environment.yml
+```
 
 ## How to run
 1. Construct evolutionary network, run
-```bash
-python3 evoluNetwork.py
-```
+    ```bash
+    python3 evoluNetwork.py
+    ```
 
 2. Train with customized hyperparameters, run
-```bash
-python3 train.py --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
-```
+    ```bash
+    python3 train.py --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
+    ```
 
-If you want to use GPU and keep the process running even after exiting the shell or terminal, run
-```bash
-nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed >> nohup.out &
-```
+Train on GPU, run
+    ```bash
+    python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
+    ```
+use `nohup`, run
+    ```bash
+    nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed >> nohup.out &
+    ```
 
-different neighbor sampling strategy:
-```bash
-nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '-1' --num-layers 2 --detailed >> quickTest.out &
-```
+3*. Try different neighbor sampling strategy, run
+    ```bash
+    nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '-1' --num-layers 2 --detailed >> nohup.out &
+    ```
 
 ## Q&A
+TODO...
