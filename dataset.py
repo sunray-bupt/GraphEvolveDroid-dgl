@@ -65,12 +65,13 @@ class EvolutionaryNet(DGLDataset):
         # val_mask = self.create_mask(n_nodes, list(range(256, 320)))
         # ids_test = {
         #     "2015-1": list(range(320, 448)),
-        #     "2015-2": list(range(448, 500)), 
+        #     "2015-2": list(range(448, 500)),
         #     "2015-3": list(range(500, 600))
         # }
 
         self.graph.ndata['train_mask'] = train_mask
         self.graph.ndata['val_mask'] = val_mask
+        self.graph.ndata['test_mask'] = self.create_mask(n_nodes, ids_test)
         for date, indices in ids_test.items():
             test_mask = "test_mask_" + date
             self.graph.ndata[test_mask] = self.create_mask(n_nodes, indices)

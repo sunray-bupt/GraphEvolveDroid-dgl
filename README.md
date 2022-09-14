@@ -66,5 +66,11 @@ Dataset comes from [TESSERACT: eliminating experimental bias in malware classifi
 4. Try different neighbor sampling strategy, run
 
    ```bash
-   nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '-1' --num-layers 2 --detailed >> nohup.out &
+   nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '5,5' --num-layers 2 --detailed >> nohup.out &
+   ```
+
+5. Inductive learning on graph(recommend), run
+
+   ```bash
+   nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '5,5' --num-layers 2 --detailed --inductive >> nohup.out &
    ```
