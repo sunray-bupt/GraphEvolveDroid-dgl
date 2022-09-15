@@ -72,5 +72,5 @@ Dataset comes from [TESSERACT: eliminating experimental bias in malware classifi
 5. Inductive learning on graph(recommend), run
 
    ```bash
-   nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '5,5' --num-layers 2 --detailed --inductive >> nohup.out &
+   nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --num-layers 2 --detailed --inductive >> nohup.out &
    ```
