@@ -1,6 +1,8 @@
 # DGL Implementation of the GraphEvolveDroid Paper
 A DGL implementation for the CIKM 2021 paper below:
+
 GraphEvolveDroid: Mitigate Model Degradation in the Scenario of Android Ecosystem Evolution.
+
 [[paper]](https://dl.acm.org/doi/abs/10.1145/3459637.3482118)[[author's code]](https://github.com/liangxun/GraphEvolveDroid)
 
 ## Dependencies
@@ -10,7 +12,7 @@ GraphEvolveDroid: Mitigate Model Degradation in the Scenario of Android Ecosyste
 * scikit-learn 1.0.2
 * numpy 1.21.2
 
-## Installation
+## Environment
 1. Create the environment from the `environment.yml` file:
     ```bash
     conda env create -f environment.yml
