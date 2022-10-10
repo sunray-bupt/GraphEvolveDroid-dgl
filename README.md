@@ -1,5 +1,7 @@
 # DGL Implementation of the GraphEvolveDroid Paper
-This DGL example implements the GraphEvolveDroid model proposed in the paper [GraphEvolveDroid: Mitigate Model Degradation in the Scenario of Android Ecosystem Evolution](https://dl.acm.org/doi/abs/10.1145/3459637.3482118). The author's codes of implementation is [here](https://github.com/liangxun/GraphEvolveDroid).
+A DGL implementation for the CIKM 2021 paper below:
+GraphEvolveDroid: Mitigate Model Degradation in the Scenario of Android Ecosystem Evolution.
+[paper](https://dl.acm.org/doi/abs/10.1145/3459637.3482118)[author's code](https://github.com/liangxun/GraphEvolveDroid)
 
 ## Dependencies
 * Python 3.8.13
@@ -45,32 +47,37 @@ Dataset comes from [TESSERACT: eliminating experimental bias in malware classifi
    python3 evoluNetwork.py
    ```
 
-2. Train with customized hyperparameters, run
+2. Train on GPU, run
 
    ```bash
-   python3 train.py --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
-   ```
-
-3. Train on GPU, run
-
-   ```bash
-   python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
+   python3 train.py --gpu 0
    ```
 
    or use `nohup`, run
 
    ```bash
-   nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed >> nohup.out &
+   nohup python3 train.py --gpu 0 >> nohup.out &
    ```
 
-4. Try different neighbor sampling strategy, run
+3. Tune your hyperparameters, run
 
    ```bash
-   nohup python3 train.py --gpu 1 --num-epochs 3 --fan-out '5,5' --num-layers 2 --detailed >> nohup.out &
+   python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --batch-size 128 --detailed
    ```
 
-5. Inductive learning on graph(recommend), run
+4. Specify the number of sampled neighbors for each layer, run
 
    ```bash
-   nohup python3 train.py --gpu 0 --num-epochs 5 --num-hidden 200 --num-layers 2 --detailed --inductive >> nohup.out &
+   nohup python3 train.py --num-layers 2 --fan-out 5,5 --gpu 0 --detailed >> nohup.out &
+   ```
+
+5. Inductive learning on graph(**recommended**), run
+
+   ```bash
+   nohup python3 train.py --gpu 0 --detailed --inductive >> nohup.out &
+   ```
+
+6. Train one-layer GraphSAGE, run
+   ```bash
+   nohup python3 train.py --model sage --num-layers 1 --fan-out 5 --gpu 0 --num-epochs 5 --detailed >> nohup.out &
    ```

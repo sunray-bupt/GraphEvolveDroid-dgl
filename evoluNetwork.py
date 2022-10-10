@@ -1,101 +1,104 @@
 import os
 import pickle as pkl
+from tracemalloc import start
 import numpy as np
 import scipy.sparse as sp
 from sklearn.decomposition import TruncatedSVD
 
-
-def get_pca_tranformer(feat, n=64):
-    pca = TruncatedSVD(n_components=n, random_state=42)
-    pca.fit(feat)
-    return pca
-
+"""
+    Evolutionary network
+    Paper: GraphEvolveDroid: Mitigate Model Degradation in the Scenario of Android Ecosystem Evolution
+    Source: https://github.com/liangxun/GraphEvolveDroid
+"""
 
 class EvolutionGraph:
-    def __init__(self, feat, k, batchsize):
+    """
+    Construct an evolutionary network proposed in paper.
+    Evolutionary network is a KNN graph with timestamp constraints.
+    """
+
+    def __init__(self, feat, k, batch_size=5000):
         self.k = k
-        
-        self.pca = get_pca_tranformer(feat)
-        self.feat = self.pca.transform(feat)
 
-        self.get_adj(batchsize)
-    
-    def _get_pca_tranformer(self, n=64):
-        pca = TruncatedSVD(n_components=n, random_state=42)
+        # dimensionality reduction
+        pca = TruncatedSVD(n_components=64)
         pca.fit(feat)
-        return pca
+
+        # Samples have been sorted by timestamp in preprocessing stage
+        self.feat = pca.transform(feat)
+        self.batch_size = batch_size
+        self.n = self.feat.shape[0]
     
-    def get_adj(self, batch_size=5000):
-        feat_t = self.feat.T
-        slides = []
-        # step1
-        mat = self.feat[:batch_size]
-        mat = mat.dot(feat_t)
-        mat = self._get_neighs_init(mat, batch_size)
-        slides.append(mat)
-        # step2
-        k = batch_size
-        while (k+batch_size) < self.feat.shape[0]:
-            mat = self.feat[k: k+batch_size]
-            mat = mat.dot(feat_t)
-            mat = self._get_neighs(mat, k)
-            slides.append(mat)
-            k += batch_size
-            print("{} app handled".format(k))
-        mat = self.feat[k:]
-        mat = mat.dot(feat_t)
-        mat = self._get_neighs(mat, k)
-        slides.append(mat)
+    def get_adj(self):
+        graph = list()
+        
+        # step 1: calculate cosine similarity in the first batch
+        batch = self.feat[:self.batch_size]
+        batch = batch.dot(batch.T)
 
-        self.adj = sp.vstack(slides)
+        # step 2: select top K similar neighbors without timestamp constraints
+        batch = self._init_get_top_k_neighbors(batch)
+        graph.append(batch)
 
-    def _get_neighs(self, mat, start_id):
-        print(mat.shape)
-        data = []
-        row = []
-        col = []
-        for iloc, d in enumerate(mat):
-            d = d.squeeze()
-            d[iloc+start_id:] = 0
-            inds = np.argpartition(d, -self.k)[-self.k:]
+        # construct Evolutionary netowrk with timestamp constraints
+        start_id = self.batch_size
+        while start_id < self.n:
+            end_id = min(start_id + self.batch_size, self.n)
+            print((start_id, end_id))
 
-            for ind in inds:
-                if d[ind]:
-                    data.append(d[ind])
-                    row.append(iloc)
-                    col.append(ind)
-        coo_mat = sp.coo_matrix((data, (row, col)), shape=mat.shape)
-        return coo_mat.tocsr()
+            # step1: calculate cosine similarity between nodes and their parent nodes
+            batch = self.feat[start_id: end_id]
+            batch = batch.dot(self.feat[:end_id].T)
 
-    def _get_neighs_init(self, mat, threshold):
-        print(mat.shape)
-        data = []
-        row = []
-        col = []
-        for iloc, d in enumerate(mat):
-            d = d.squeeze()
-            d[threshold:] = 0
-            inds = np.argpartition(d, -self.k)[-self.k:]
+            # step2: select top K similar neighbors with timestamp constraints
+            batch = self._get_top_k_neighbors(batch, start_id)
+            start_id += self.batch_size
+            graph.append(batch)
 
-            for ind in inds:
-                if d[ind]:
-                    data.append(d[ind])
-                    row.append(iloc)
-                    col.append(ind)
-        coo_mat = sp.coo_matrix((data, (row, col)), shape=mat.shape)
-        return coo_mat.tocsr()
+        return sp.vstack(graph)
 
+    def _get_top_k_neighbors(self, batch, start_id):
+        """
+        Select top k similar neighbors, where node_idx is smaller than current node_idx
+        """
+        csr_row, csr_col, csr_data = list(), list(), list()
+
+        for row, sim in enumerate(batch):
+            idx = row + start_id
+            cols = np.argpartition(sim[:idx], -self.k)[-self.k:]
+            data = sim[cols]
+            csr_row += self.k * [row]
+            csr_col += cols.tolist()
+            csr_data += data.tolist()
+
+        return sp.csr_matrix((csr_data, (csr_row, csr_col)), shape=[batch.shape[0], self.n])
+
+    def _init_get_top_k_neighbors(self, batch):
+        """
+        In the first batch, there is no timestamp constraints.
+        """
+        csr_row, csr_col, csr_data = list(), list(), list()
+
+        for row, sim in enumerate(batch):
+            cols = np.argpartition(sim, -self.k)[-self.k:]
+            data = sim[cols]
+            csr_row += self.k * [row]
+            csr_col += cols.tolist()
+            csr_data += data.tolist()
+
+        return sp.csr_matrix((csr_data, (csr_row, csr_col)), shape=[batch.shape[0], self.n])
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description="construct knn.")
+    parser = argparse.ArgumentParser(description="construct knn graph.")
     parser.add_argument('--keyword', type=str, default='drebin')
     parser.add_argument('--k', type=int, default=5)
     args = parser.parse_args()
 
-    # data_dir = "/home/sunrui/data/apigraph/vocabulary-2012"
-    data_dir = "/home/sunrui/data/apigraph/vocabulary-12_13"
+    data_dir = "/home/sunrui/data/GraphEvolveDroid"
     feat = sp.load_npz(os.path.join(data_dir, "{}_feat_mtx.npz".format(args.keyword)))
-    graph = EvolutionGraph(feat, args.k, batchsize=10000)
-    print(args.keyword, args.k, graph.adj)
-    sp.save_npz(os.path.join(data_dir, "{}_knn_{}.npz".format(args.keyword, args.k)), graph.adj)
+
+    graph = EvolutionGraph(feat, args.k, batch_size=10000)
+    adj_mtx = graph.get_adj()
+    print(adj_mtx)
+    sp.save_npz(os.path.join(data_dir, "{}_knn_{}.npz".format(args.keyword, args.k)), adj_mtx)

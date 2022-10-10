@@ -32,17 +32,17 @@ class EvolutionaryNet(DGLDataset):
         coo_feats = node_feats.tocoo()
         values = coo_feats.data
         indices = np.vstack((coo_feats.row, coo_feats.col))
-        i = torch.LongTensor(indices)
+        i = torch.IntTensor(indices)
         v = torch.FloatTensor(values)
         shape = coo_feats.shape
-        sparse_feats = torch.sparse.FloatTensor(i, v, torch.Size(shape))
+        sparse_feats = torch.sparse_coo_tensor(i, v, torch.Size(shape))
         
         with open(os.path.join(self.data_dir, 'label_info','label_info.json'), 'r') as f:
             label_info = json.load(f)
         node_labels = []
         for _, _, label in label_info:
             node_labels.append(label)
-        node_labels = np.array(node_labels)
+        node_labels = np.array(node_labels, dtype=np.int64)
         node_labels = torch.from_numpy(node_labels)
         
         self.graph = dgl.from_scipy(adjacency_matrix)

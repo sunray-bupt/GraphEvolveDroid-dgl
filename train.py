@@ -11,7 +11,7 @@ import datetime
 import sklearn.metrics as skm
 import os
 
-from model import GED
+from model import GED, SAGE
 from dataset import EvolutionaryNet
 
 def compute_metrics(pred, labels, detailed=False):
@@ -95,7 +95,10 @@ def run(args, device, data):
     print("Total sampling time for training: %s (with %02d num_workers)" % (end - start, args.num_workers))
 
     # Define model and optimizer
-    model = GED(in_feats, args.num_hidden, n_classes, args.num_layers, F.relu, args.dropout)
+    if args.model == 'ged':
+        model = GED(in_feats, args.num_hidden, n_classes, args.num_layers, F.relu, args.dropout)
+    elif args.model == 'sage':
+        model = SAGE(in_feats, args.num_hidden, n_classes, args.num_layers, F.relu, args.dropout)
     model = model.to(device)
     # Hyperparameter weight (negative(0) : positive(1) = 1 : 5)
     loss_fcn = nn.CrossEntropyLoss(weight=th.Tensor([1, 5]).to(device))
@@ -121,7 +124,7 @@ def run(args, device, data):
 
             # Compute loss and prediction
             batch_pred = model(blocks, batch_inputs)
-            loss = loss_fcn(batch_pred, batch_labels.type(th.int64))
+            loss = loss_fcn(batch_pred, batch_labels)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -216,46 +219,27 @@ def testing_monthly(args, model, device, g, nfeat, labels):
     Save time by handling the inference process separately for different experimental settings.
     """
     metrics = list()
-    for period, test_mask in getMonths():
-        if args.inductive:
-            # test_g = g.subgraph(g.ndata[test_mask])
+    if args.inductive:
+        for period, test_mask in getMonths():
             test_g = g[test_mask]
             test_nfeat = test_g.ndata.pop('features')
             test_labels = test_g.ndata.pop('labels')
             test_nid = th.nonzero(test_g.ndata[test_mask], as_tuple=True)[0]
-        else:
-            test_g = g
-            test_nfeat = nfeat
-            test_labels = labels
-            test_nid = th.nonzero(test_g.ndata[test_mask], as_tuple=True)[0]
-        test_acc, test_f1, test_p, test_r = evaluate(model, test_g, test_nfeat, test_labels, test_nid, device, args.detailed)
-        print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
-        metrics.append([period, test_acc, test_f1, test_p, test_r])
-
-    # if args.inductive:
-    #     for period, test_mask in getMonths():
-    #         test_g = g.subgraph(g.ndata[test_mask])
-    #         test_nfeat = test_g.ndata.pop('features')
-    #         test_labels = test_g.ndata.pop('labels')
-    #         test_nid = th.nonzero(test_g.ndata[test_mask], as_tuple=True)[0]
-    #         test_acc, test_f1, test_p, test_r = evaluate(model, test_g, test_nfeat, test_labels, test_nid, device, args.detailed)
-    #         print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
-    #         metrics.append([period, test_acc, test_f1, test_p, test_r])
-    # else:
-    #     nfeat = g.ndata.pop('features')
-    #     labels = g.ndata.pop('labels')
-    #     model.eval()
-    #     with th.no_grad():
-    #         pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
-    #     model.train()
-    #     for period, test_mask in getMonths():
-    #         test_nid = th.nonzero(g.ndata[test_mask], as_tuple=True)[0]
-    #         month_pred = pred[test_nid].cpu().data.numpy().argmax(axis=1)
-    #         month_labels = labels[test_nid].data.numpy()
-    #         test_acc, test_f1, test_p, test_r = compute_metrics(month_pred, month_labels, args.detailed)
-    #         print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
-    #         metrics.append([period, test_acc, test_f1, test_p, test_r])
-
+            test_acc, test_f1, test_p, test_r = evaluate(model, test_g, test_nfeat, test_labels, test_nid, device, args.detailed)
+            print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
+            metrics.append([period, test_acc, test_f1, test_p, test_r])
+    else:
+        model.eval()
+        with th.no_grad():
+            pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
+        model.train()
+        for period, test_mask in getMonths():
+            test_nid = th.nonzero(g.ndata[test_mask], as_tuple=True)[0]
+            month_pred = pred[test_nid].cpu().data.numpy().argmax(axis=1)
+            month_labels = labels[test_nid].data.numpy()
+            test_acc, test_f1, test_p, test_r = compute_metrics(month_pred, month_labels, args.detailed)
+            print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
+            metrics.append([period, test_acc, test_f1, test_p, test_r])
     return metrics
 
 def getMonths():
@@ -271,17 +255,17 @@ def getMonths():
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
+    argparser.add_argument('--model', type=str, default='ged')  # GraphSAGE / GED: graphSAGE + 2-layer MLP
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
-    # argparser.add_argument('--dataset', type=str, default='reddit')
-    argparser.add_argument('--num-epochs', type=int, default=50)
-    argparser.add_argument('--num-hidden', type=int, default=200)
+    argparser.add_argument('--num-epochs', type=int, default=5)
+    argparser.add_argument('--num-hidden', type=int, default=128)
     argparser.add_argument('--num-layers', type=int, default=2) # GraphSAGE layers
     argparser.add_argument('--fan-out', type=str, default='10,25')
     argparser.add_argument('--batch-size', type=int, default=128)
     argparser.add_argument('--log-every', type=int, default=20)
     argparser.add_argument('--eval-every', type=int, default=1)
-    argparser.add_argument('--lr', type=float, default=1e-4)
+    argparser.add_argument('--lr', type=float, default=1e-3)
     argparser.add_argument('--weight-decay', type=float, default=1e-5)
     argparser.add_argument('--dropout', type=float, default=0.5)
     argparser.add_argument('--num-workers', type=int, default=4,
@@ -303,6 +287,8 @@ if __name__ == '__main__':
                                 "be undesired if they cannot fit in GPU memory at once. "
                                 "This flag disables that.")
     args = argparser.parse_args()
+    assert args.model in ['ged', 'sage'], "Only ged(GraphEvolveDroid) and sage(GraphSAGE) are optional."
+    assert len(args.fan_out.split(',')) == args.num_layers, "Specify number of sampled neighbors for each layer."
     print()
     first_start = datetime.datetime.now()
     print(first_start)
