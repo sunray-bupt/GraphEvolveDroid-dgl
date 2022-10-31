@@ -45,9 +45,9 @@ class EvolutionaryNet(DGLDataset):
         node_labels = np.array(node_labels, dtype=np.int64)
         node_labels = torch.from_numpy(node_labels)
         
-        self.graph = dgl.from_scipy(adjacency_matrix)
-        self.graph.ndata['features'] = sparse_feats
-        self.graph.ndata['labels'] = node_labels
+        g = dgl.from_scipy(adjacency_matrix)
+        g.ndata['features'] = sparse_feats
+        g.ndata['labels'] = node_labels
         
         with open(os.path.join(self.data_dir, 'label_info', 'split_info.json'), 'r') as f:
             split_info = json.load(f)
@@ -69,15 +69,18 @@ class EvolutionaryNet(DGLDataset):
         #     "2015-3": list(range(500, 600))
         # }
 
-        self.graph.ndata['train_mask'] = train_mask
-        self.graph.ndata['val_mask'] = val_mask
-        self.graph.ndata['test_mask'] = self.create_mask(n_nodes, ids_test)
+        g.ndata['train_mask'] = train_mask
+        g.ndata['val_mask'] = val_mask
+        g.ndata['test_mask'] = self.create_mask(n_nodes, ids_test)
         for date, indices in ids_test.items():
             test_mask = "test_mask_" + date
-            self.graph.ndata[test_mask] = self.create_mask(n_nodes, indices)
+            g.ndata[test_mask] = self.create_mask(n_nodes, indices)
+
+        self._g = dgl.reorder_graph(g)
 
     def __getitem__(self, i):
-        return self.graph
+        assert i == 0, "Only one graph in the dataset."
+        return self._g
 
     def __len__(self):
         return 1

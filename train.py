@@ -10,9 +10,11 @@ import argparse
 import datetime
 import sklearn.metrics as skm
 import os
+import random
 
 from model import GED, SAGE
 from dataset import EvolutionaryNet
+from utils import EarlyStopping
 
 def compute_metrics(pred, labels, detailed=False):
     """
@@ -64,7 +66,7 @@ def load_subtensor(nfeat, labels, seeds, input_nodes, device):
 def run(args, device, data):
     # Unpack data
     n_classes, train_g, val_g, test_g, train_nfeat, train_labels, \
-    val_nfeat, val_labels, test_nfeat, test_labels = data
+    val_nfeat, val_labels, test_nfeat, test_labels, data_file_path = data
     in_feats = train_nfeat.shape[1]
     train_nid = th.nonzero(train_g.ndata['train_mask'], as_tuple=True)[0]
     val_nid = th.nonzero(val_g.ndata['val_mask'], as_tuple=True)[0]
@@ -105,10 +107,25 @@ def run(args, device, data):
     # loss_fcn = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
+    # Create checkpoint directory path
+    save_path = "./checkpoints"
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+    model_name = model.__class__.__name__
+    checkpoint_name = timestamp + "_" + model_name
+    if not os.path.exists(save_path):
+        os.mkdir(save_path)
+    checkpoint_path = os.path.join(save_path, checkpoint_name)
+    if os.path.exists(checkpoint_path):
+        checkpoint_path = os.path.join(save_path, checkpoint_name + str(random.randint(1, 10000)))
+    os.mkdir(checkpoint_path)
+    if args.early_stop:
+        stopper = EarlyStopping(checkpoint_path, patience=10)
+
     # Training loop
     avg = 0
     iter_tput = []
     hist_loss = []
+    eval_f1 = 0
     for epoch in range(args.num_epochs):
         tic = time.time()
 
@@ -133,8 +150,8 @@ def run(args, device, data):
             if step % args.log_every == 0:
                 acc = compute_acc(batch_pred, batch_labels)
                 gpu_mem_alloc = th.cuda.max_memory_allocated() / 1000000 if th.cuda.is_available() else 0
-                print('Epoch {:05d} | Step {:05d} | Loss {:.4f} | Train Acc {:.4f} | Speed (samples/sec) {:.4f} | GPU {:.1f} MB'.format(
-                    epoch, step, loss.item(), acc.item(), np.mean(iter_tput[3:]), gpu_mem_alloc))
+                print('Epoch {:05d} | Step {:05d} | Loss {:.4f} | Train Acc {:.4f} | Speed (samples/sec) {:.4f} | GPU {:.1f} MB'\
+                .format(epoch, step, loss.item(), acc.item(), np.mean(iter_tput[3:]), gpu_mem_alloc))
             tic_step = time.time()
             batch_loss.append(loss.item())
 
@@ -143,29 +160,39 @@ def run(args, device, data):
         hist_loss.append(sum(batch_loss) / len(batch_loss))
         if epoch >= 5:
             avg += toc - tic
-        if epoch % args.eval_every == 0 and epoch != 0:
-            eval_acc, eval_f1, eval_p, eval_r = evaluate(model, val_g, val_nfeat, val_labels, val_nid, device, args.detailed)
-            print('Eval Acc {:.4f} | Eval F1: {:.4f} | Eval Precision: {:.4f} | Eval Recall: {:.4f}'.format(eval_acc, eval_f1, eval_p, eval_r))
-    
+        
+        if args.early_stop:
+            if epoch % args.eval_every == 0 and epoch >= 10:
+                eval_start = datetime.datetime.now()
+                eval_acc, eval_f1, eval_p, eval_r = evaluate(model, val_g, val_nfeat, val_labels, val_nid, device, args.detailed)
+                eval_end = datetime.datetime.now()
+                print('Epoch: {} | Time: {} | Eval Acc: {:.4f} | Eval F1: {:.4f} | Eval Precision: {:.4f} | Eval Recall: {:.4f}'\
+                .format(epoch, eval_start-eval_end, eval_acc, eval_f1, eval_p, eval_r))
+
+            if stopper.step(eval_f1, model):
+                break
+        
     if epoch >= 5:
         print('Avg epoch time: {}'.format(avg / (epoch - 4)))
 
     # Testing
     start = datetime.datetime.now()
+    if args.early_stop:
+        model.load_state_dict(stopper.load_checkpiont())
     metrics = testing_monthly(args, model, device, test_g, test_nfeat, test_labels)
     end = datetime.datetime.now()
-    print("Total testing time (split testing dataset & inference): %s" % (end - start))
+    print("Total testing time (load state dict if early stopped & split testing subgraph if inductive learning & inference on graph): %s" % (end - start))
 
     # Save model
     start = datetime.datetime.now()
-    save_path = "./checkpoints"
-    checkpoint = save_model(args, save_path, model, hist_loss, metrics)
+    save_model(args, data_file_path, save_path, checkpoint_path, model, hist_loss, metrics)
     end = datetime.datetime.now()
-    print("Saving model in %s (consume time: %s)" % (checkpoint, end - start))
+    print("Saving model in %s (consume time: %s)" % (checkpoint_path, end - start))
 
 def compute_aut_metrics(metrics):
     """
-    Compute AUT version of each metrics
+        Compute AUT version of each metrics
+        Refer to paper: TESSERACT: Eliminating Experimental Bias in Malware Classification across Space and Time
     """
     # Delete 'period' field for each row
     metrics = [metric[1:] for metric in metrics]
@@ -174,19 +201,10 @@ def compute_aut_metrics(metrics):
     aut_metrics = metrics[1:-1].sum(axis=0) + metrics.sum(axis=0)
     return aut_metrics / norm
 
-def save_model(args, save_path, model, loss, metrics):
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
-    model_name = model.__class__.__name__
-    checkpoint_name = timestamp + "_" + model_name
-    if not os.path.exists(save_path):
-        os.mkdir(save_path)
-    checkpoint_path = os.path.join(save_path, checkpoint_name)
-    if not os.path.exists(checkpoint_path):
-        os.mkdir(checkpoint_path)
-
+def save_model(args, data_path, save_path, checkpoint_path, model, loss, metrics):
     # Save model state_dict
     if args.save_model:
-        th.save(model.state_dict(), os.path.join(checkpoint_path, model_name + "-model.pt"))
+        th.save(model.state_dict(), os.path.join(checkpoint_path, "latest.pt"))
 
     # Save model loss & metrics
     hist_records = dict()
@@ -199,9 +217,8 @@ def save_model(args, save_path, model, loss, metrics):
     aut_acc, aut_f1, aut_p, aut_r = compute_aut_metrics(metrics)
     with open(report_file, 'a') as f:
         f.write("{}\n".format(args))
-        f.write("{}\tAUT_acc {:.4f}\tAUT_F1 {:.4f}\tAUT_P {:.4f}\tAUT_R {:.4f}\n".format(checkpoint_name, aut_acc, aut_f1, aut_p, aut_r))
-
-    return checkpoint_name
+        f.write("{}\n".format(data_path))
+        f.write("{}\tAUT_acc {:.4f}\tAUT_F1 {:.4f}\tAUT_P {:.4f}\tAUT_R {:.4f}\n".format(checkpoint_path, aut_acc, aut_f1, aut_p, aut_r))
 
 def inductive_split(g):
     """Split the graph into training graph, validation graph by training
@@ -255,17 +272,20 @@ def getMonths():
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--model', type=str, default='ged')  # GraphSAGE / GED: graphSAGE + 2-layer MLP
+    argparser.add_argument('--model', type=str, default='ged',
+                            help="'ged' and 'sage' are available. 'sage' stands for GraphSAGE. 'ged' stands for GraphEvolveDroid."
+                                 "By default the script use GraphEvolveDroid architecture.")
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
     argparser.add_argument('--num-epochs', type=int, default=5)
     argparser.add_argument('--num-hidden', type=int, default=128)
-    argparser.add_argument('--num-layers', type=int, default=2) # GraphSAGE layers
+    argparser.add_argument('--num-layers', type=int, default=2,
+                            help="Number of gnn layers.")
     argparser.add_argument('--fan-out', type=str, default='10,25')
     argparser.add_argument('--batch-size', type=int, default=128)
     argparser.add_argument('--log-every', type=int, default=20)
     argparser.add_argument('--eval-every', type=int, default=1)
-    argparser.add_argument('--lr', type=float, default=1e-3)
+    argparser.add_argument('--lr', type=float, default=1e-4)
     argparser.add_argument('--weight-decay', type=float, default=1e-5)
     argparser.add_argument('--dropout', type=float, default=0.5)
     argparser.add_argument('--num-workers', type=int, default=4,
@@ -274,12 +294,14 @@ if __name__ == '__main__':
                            help="Perform the sampling process on the GPU. Must have 0 workers.")
     argparser.add_argument('--inductive', action='store_true',
                            help="Inductive learning setting")
+    argparser.add_argument('--early-stop', action='store_true',
+                           help="Indicates whether to use early stop")
     argparser.add_argument('--detailed', action='store_true', 
                             help="Print confusion matrix during inference process.")
     argparser.add_argument('--save-model', action='store_true', 
                             help="By default the script does not save model state_dict "
-                                 "for disk space consumption. This may be undesired if you "
-                                 "want to recover the model for inference. "
+                                 "considering disk space consumption. This may be undesired"
+                                 "if you want to recover the model for inference. "
                                  "This flag disables that.")
     argparser.add_argument('--data-cpu', action='store_true',
                            help="By default the script puts all node features and labels "
@@ -287,7 +309,7 @@ if __name__ == '__main__':
                                 "be undesired if they cannot fit in GPU memory at once. "
                                 "This flag disables that.")
     args = argparser.parse_args()
-    assert args.model in ['ged', 'sage'], "Only ged(GraphEvolveDroid) and sage(GraphSAGE) are optional."
+    assert args.model in ['ged', 'sage'], "Only ged(GraphEvolveDroid) and sage(GraphSAGE) are available."
     assert len(args.fan_out.split(',')) == args.num_layers, "Specify number of sampled neighbors for each layer."
     print()
     first_start = datetime.datetime.now()
@@ -300,11 +322,15 @@ if __name__ == '__main__':
         device = th.device('cpu')
 
     start = datetime.datetime.now()
-    # Dataset directory. For a more detailed explanation see README.md
+    # Dataset directory. More detailed explanation see README.md
     # data_dir = "/home/sunrui/data/apigraph/vocabulary-2012"
     data_dir = "/home/sunrui/data/GraphEvolveDroid"
     feat_mtx = "drebin_feat_mtx.npz"
-    adj_mtx = "drebin_knn_5.npz"
+    adj_mtx = "drebin_knn_5_T.npz"
+    # adj_mtx = "drebin_rev_tf_knn_5.npz"
+    file_path = (data_dir, feat_mtx, adj_mtx)
+    print(file_path)
+
     dataset = EvolutionaryNet(data_dir, feat_mtx, adj_mtx)
     g = dataset[0]
     end = datetime.datetime.now()
@@ -337,8 +363,9 @@ if __name__ == '__main__':
 
     # Pack data
     data = n_classes, train_g, val_g, test_g, train_nfeat, train_labels, \
-           val_nfeat, val_labels, test_nfeat, test_labels
+           val_nfeat, val_labels, test_nfeat, test_labels, file_path
 
     run(args, device, data)
     last_end = datetime.datetime.now()
+    print(file_path)
     print("Program total execution time: %s" % (last_end - first_start))

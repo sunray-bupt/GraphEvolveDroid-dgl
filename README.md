@@ -79,5 +79,5 @@ Dataset comes from [TESSERACT: eliminating experimental bias in malware classifi
 
 6. Train one-layer GraphSAGE, run
    ```bash
-   nohup python3 train.py --model sage --num-layers 1 --fan-out 5 --gpu 0 --num-epochs 5 --detailed >> nohup.out &
+   nohup python3 train.py --model sage --num-layers 1 --fan-out 10 --lr 1e-3 --weight-decay 1e-3 --num-epochs 300 --early-stop >> nohup.out &
    ```
