@@ -6,7 +6,7 @@ GraphEvolveDroid: Mitigate Model Degradation in the Scenario of Android Ecosyste
 ## Dependencies
 * Python 3.8.13
 * PyTorch 1.10.1
-* dgl 0.8.0
+* dgl-cuda10.2 0.8.0post2
 * scikit-learn 1.0.2
 * numpy 1.21.2
 

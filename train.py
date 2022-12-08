@@ -35,7 +35,7 @@ def compute_acc(pred, labels):
     labels = labels.long()
     return (th.argmax(pred, dim=1) == labels).float().sum() / len(pred)
 
-def evaluate(model, g, nfeat, labels, val_nid, device, detailed=False):
+def evaluate(model, g, nfeat, labels, val_nid, device):
     """
     Evaluate the model on the validation set specified by ``val_nid``.
     g : The entire graph.
@@ -50,7 +50,7 @@ def evaluate(model, g, nfeat, labels, val_nid, device, detailed=False):
     model.train()
     pred = pred[val_nid].cpu().data.numpy().argmax(axis=1)
     labels = labels[val_nid].data.numpy()
-    return compute_metrics(pred, labels, detailed)
+    return compute_metrics(pred, labels, args.detailed)
 
 def load_subtensor(nfeat, labels, seeds, input_nodes, device):
     """
@@ -65,13 +65,12 @@ def load_subtensor(nfeat, labels, seeds, input_nodes, device):
 #### Entry point
 def run(args, device, data):
     # Unpack data
-    n_classes, train_g, val_g, test_g, train_nfeat, train_labels, \
-    val_nfeat, val_labels, test_nfeat, test_labels, data_file_path = data
+    n_classes, train_g, val_g, test_data, train_nfeat, train_labels, \
+    val_nfeat, val_labels, data_file_path = data
     in_feats = train_nfeat.shape[1]
     train_nid = th.nonzero(train_g.ndata['train_mask'], as_tuple=True)[0]
     val_nid = th.nonzero(val_g.ndata['val_mask'], as_tuple=True)[0]
 
-    start = datetime.datetime.now()
     dataloader_device = th.device('cpu')
     if args.sample_gpu:
         train_nid = train_nid.to(device)
@@ -93,8 +92,6 @@ def run(args, device, data):
         shuffle=True,
         drop_last=False,
         num_workers=args.num_workers)
-    end = datetime.datetime.now()
-    print("Total sampling time for training: %s (with %02d num_workers)" % (end - start, args.num_workers))
 
     # Define model and optimizer
     if args.model == 'ged':
@@ -164,7 +161,7 @@ def run(args, device, data):
         if args.early_stop:
             if epoch % args.eval_every == 0 and epoch >= 10:
                 eval_start = datetime.datetime.now()
-                eval_acc, eval_f1, eval_p, eval_r = evaluate(model, val_g, val_nfeat, val_labels, val_nid, device, args.detailed)
+                eval_acc, eval_f1, eval_p, eval_r = evaluate(model, val_g, val_nfeat, val_labels, val_nid, device)
                 eval_end = datetime.datetime.now()
                 print('Epoch: {} | Time: {} | Eval Acc: {:.4f} | Eval F1: {:.4f} | Eval Precision: {:.4f} | Eval Recall: {:.4f}'\
                 .format(epoch, eval_start-eval_end, eval_acc, eval_f1, eval_p, eval_r))
@@ -179,7 +176,7 @@ def run(args, device, data):
     start = datetime.datetime.now()
     if args.early_stop:
         model.load_state_dict(stopper.load_checkpiont())
-    metrics = testing_monthly(args, model, device, test_g, test_nfeat, test_labels)
+    metrics = testing_monthly(args, model, device, test_data)
     end = datetime.datetime.now()
     print("Total testing time (load state dict if early stopped & split testing subgraph if inductive learning & inference on graph): %s" % (end - start))
 
@@ -216,47 +213,37 @@ def save_model(args, data_path, save_path, checkpoint_path, model, loss, metrics
     report_file = os.path.join(save_path, "reports.csv")
     aut_acc, aut_f1, aut_p, aut_r = compute_aut_metrics(metrics)
     with open(report_file, 'a') as f:
+        f.write("\n")
         f.write("{}\n".format(args))
         f.write("{}\n".format(data_path))
-        f.write("{}\tAUT_acc {:.4f}\tAUT_F1 {:.4f}\tAUT_P {:.4f}\tAUT_R {:.4f}\n".format(checkpoint_path, aut_acc, aut_f1, aut_p, aut_r))
+        f.write("Records saved in {}\n".format(checkpoint_path))
+        f.write("AUT_acc {:.4f}\tAUT_F1 {:.4f}\tAUT_P {:.4f}\tAUT_R {:.4f}\n".format(aut_acc, aut_f1, aut_p, aut_r))
 
 def inductive_split(g):
     """Split the graph into training graph, validation graph by training
     and validation masks.  Suitable for inductive models."""
     train_g = g.subgraph(g.ndata['train_mask'])
-    val_g = g.subgraph(g.ndata['val_mask'])
-    test_g = dict()
-    for period, test_mask in getMonths():
-        test_g[test_mask] = g.subgraph(g.ndata[test_mask])
-    return train_g, val_g, test_g
+    val_g = g.subgraph(g.ndata['val_mask'] | g.ndata['train_mask'])
+    return train_g, val_g
 
-def testing_monthly(args, model, device, g, nfeat, labels):
+def testing_monthly(args, model, device, test_data):
     """
     Model is tested on dataset month by month.
     Save time by handling the inference process separately for different experimental settings.
     """
     metrics = list()
-    if args.inductive:
-        for period, test_mask in getMonths():
-            test_g = g[test_mask]
-            test_nfeat = test_g.ndata.pop('features')
-            test_labels = test_g.ndata.pop('labels')
-            test_nid = th.nonzero(test_g.ndata[test_mask], as_tuple=True)[0]
-            test_acc, test_f1, test_p, test_r = evaluate(model, test_g, test_nfeat, test_labels, test_nid, device, args.detailed)
-            print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
-            metrics.append([period, test_acc, test_f1, test_p, test_r])
-    else:
-        model.eval()
-        with th.no_grad():
-            pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
-        model.train()
-        for period, test_mask in getMonths():
-            test_nid = th.nonzero(g.ndata[test_mask], as_tuple=True)[0]
-            month_pred = pred[test_nid].cpu().data.numpy().argmax(axis=1)
-            month_labels = labels[test_nid].data.numpy()
-            test_acc, test_f1, test_p, test_r = compute_metrics(month_pred, month_labels, args.detailed)
-            print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
-            metrics.append([period, test_acc, test_f1, test_p, test_r])
+    g, nfeat, labels = test_data
+    model.eval()
+    with th.no_grad():
+        pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
+    model.train()
+    for period, test_mask in getMonths():
+        test_nid = th.nonzero(g.ndata[test_mask], as_tuple=True)[0]
+        month_pred = pred[test_nid].cpu().data.numpy().argmax(axis=1)
+        month_labels = labels[test_nid].data.numpy()
+        test_acc, test_f1, test_p, test_r = compute_metrics(month_pred, month_labels, args.detailed)
+        print('Test period: {} | Test Acc: {:.4f} | Test F1: {:.4f} | Test Precision: {:.4f} | Test Recall: {:.4f}'.format(period, test_acc, test_f1, test_p, test_r))
+        metrics.append([period, test_acc, test_f1, test_p, test_r])
     return metrics
 
 def getMonths():
@@ -278,7 +265,7 @@ if __name__ == '__main__':
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
     argparser.add_argument('--num-epochs', type=int, default=5)
-    argparser.add_argument('--num-hidden', type=int, default=128)
+    argparser.add_argument('--num-hidden', type=int, default=256)
     argparser.add_argument('--num-layers', type=int, default=2,
                             help="Number of gnn layers.")
     argparser.add_argument('--fan-out', type=str, default='10,25')
@@ -316,6 +303,13 @@ if __name__ == '__main__':
     print(first_start)
     print(args)
 
+    seed = 42
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    th.cuda.manual_seed(seed)
+    th.cuda.manual_seed_all(seed)
+
     if args.gpu >= 0:
         device = th.device('cuda:%d' % args.gpu)
     else:
@@ -339,17 +333,17 @@ if __name__ == '__main__':
 
     start = datetime.datetime.now()
     if args.inductive:
-        train_g, val_g, test_g = inductive_split(g)
+        train_g, val_g = inductive_split(g)
         train_nfeat = train_g.ndata.pop('features')
         val_nfeat = val_g.ndata.pop('features')
-        test_nfeat = None
         train_labels = train_g.ndata.pop('labels')
         val_labels = val_g.ndata.pop('labels')
-        test_labels = None
+        test_data = g, g.ndata.pop('features'), g.ndata.pop('labels')
     else:
         train_g = val_g = test_g = g
         train_nfeat = val_nfeat = test_nfeat = g.ndata.pop('features')
         train_labels = val_labels = test_labels = g.ndata.pop('labels')
+        test_data = test_g, test_nfeat, test_labels
     end = datetime.datetime.now()
     print("Splitting training and validation dataset time: %s" % (end - start))
 
@@ -362,8 +356,8 @@ if __name__ == '__main__':
     print("Moving train_nfeat & train_labels to device (%s) time: %s" % (device, end - start))
 
     # Pack data
-    data = n_classes, train_g, val_g, test_g, train_nfeat, train_labels, \
-           val_nfeat, val_labels, test_nfeat, test_labels, file_path
+    data = n_classes, train_g, val_g, test_data, train_nfeat, train_labels, \
+           val_nfeat, val_labels, file_path
 
     run(args, device, data)
     last_end = datetime.datetime.now()
