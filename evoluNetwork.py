@@ -195,17 +195,17 @@ if __name__ == '__main__':
     data_dir = "/home/sunrui/data/GraphEvolveDroid"
     feat = sp.load_npz(os.path.join(data_dir, "{}_feat_mtx.npz".format(args.keyword)))
 
-    # graph = EvolutionGraph(feat, args.k, batch_size=10000)
-    # adj_mtx = graph.get_adj()
-    # print(adj_mtx)
-    # sp.save_npz(os.path.join(data_dir, "{}_knn_{}.npz".format(args.keyword, args.k)), adj_mtx)
-    # sp.save_npz(os.path.join(data_dir, "{}_knn_{}_T.npz".format(args.keyword, args.k)), adj_mtx.transpose())
-
-    with open(os.path.join(data_dir, 'label_info', 'split_info.json'), 'r') as f:
-        split_info = json.load(f)
-    
-    graph = TransferGraph(feat, split_info, args.k, args.gpu, batch_size=5000)
+    graph = EvolutionGraph(feat, args.k, batch_size=10000)
     adj_mtx = graph.get_adj()
-    print(adj_mtx.shape)
-    sp.save_npz(os.path.join(data_dir, "{}_rev_tf_knn_{}.npz".format(args.keyword, args.k)), adj_mtx)
-    sp.save_npz(os.path.join(data_dir, "{}_tf_knn_{}.npz".format(args.keyword, args.k)), adj_mtx.transpose())
+    print(adj_mtx)
+    sp.save_npz(os.path.join(data_dir, "{}_knn_{}.npz".format(args.keyword, args.k)), adj_mtx)
+    sp.save_npz(os.path.join(data_dir, "{}_knn_{}_T.npz".format(args.keyword, args.k)), adj_mtx.transpose())
+
+    # with open(os.path.join(data_dir, 'label_info', 'split_info.json'), 'r') as f:
+    #     split_info = json.load(f)
+    
+    # graph = TransferGraph(feat, split_info, args.k, args.gpu, batch_size=5000)
+    # adj_mtx = graph.get_adj()
+    # print(adj_mtx.shape)
+    # sp.save_npz(os.path.join(data_dir, "{}_rev_tf_knn_{}.npz".format(args.keyword, args.k)), adj_mtx)
+    # sp.save_npz(os.path.join(data_dir, "{}_tf_knn_{}.npz".format(args.keyword, args.k)), adj_mtx.transpose())

@@ -62,6 +62,13 @@ def load_subtensor(nfeat, labels, seeds, input_nodes, device):
     batch_labels = labels[seeds].to(device)
     return batch_inputs, batch_labels
 
+def collect_feature(args, g, nfeat, feature_extractor, device):
+    feature_extractor.eval()
+    with th.no_grad():
+        f = feature_extractor.inference(g, nfeat, device, args.batch_size, args.num_workers)
+    print("f: ", type(f), f.shape)
+    return f
+
 #### Entry point
 def run(args, device, data):
     # Unpack data
@@ -99,6 +106,20 @@ def run(args, device, data):
     elif args.model == 'sage':
         model = SAGE(in_feats, args.num_hidden, n_classes, args.num_layers, F.relu, args.dropout)
     model = model.to(device)
+
+    if args.phase == 'analysis':
+
+        start = datetime.datetime.now()
+        checkpoint_path = "./checkpoints/{}".format(args.timestamp)
+        model.load_state_dict(th.load(os.path.join(checkpoint_path, "latest.pt")))
+
+        feature_extractor = model.graphsage.to(device)
+        
+        g, nfeat, _ = test_data
+        all_features = collect_feature(args, g, nfeat, feature_extractor, device)
+        th.save(all_features, "./visual/features_drebin.pt")
+        return
+
     # Hyperparameter weight (negative(0) : positive(1) = 1 : 5)
     loss_fcn = nn.CrossEntropyLoss(weight=th.Tensor([1, 5]).to(device))
     # loss_fcn = nn.CrossEntropyLoss()
@@ -204,10 +225,10 @@ def save_model(args, data_path, save_path, checkpoint_path, model, loss, metrics
         th.save(model.state_dict(), os.path.join(checkpoint_path, "latest.pt"))
 
     # Save model loss & metrics
-    hist_records = dict()
-    hist_records['loss'] = loss
-    hist_records['metrics'] = metrics
-    th.save(hist_records, os.path.join(checkpoint_path, "historyRecords.pt"))
+    # hist_records = dict()
+    # hist_records['loss'] = loss
+    # hist_records['metrics'] = metrics
+    # th.save(hist_records, os.path.join(checkpoint_path, "historyRecords.pt"))
 
     # Append reports
     report_file = os.path.join(save_path, "reports.csv")
@@ -247,13 +268,15 @@ def testing_monthly(args, model, device, test_data):
     return metrics
 
 def getMonths():
-    # for year in ['2013']:
+    # for year in [2013]:
     #     for month in range(1, 13):
-    # for year in ['2015']:
+    # for year in [2015]:
     #     for month in range(1, 4):
-    for year in ['2015', '2016']:
-        for month in range(1, 13):
-            period = year + "-" + str(month)
+    # for year in [2015, 2016]:
+    #     for month in range(1, 13):
+    for year in [2012]:
+        for month in range(1, 11):
+            period = "{}-{}".format(year, month)
             test_mask = "test_mask_" + period
             yield period, test_mask
 
@@ -264,7 +287,7 @@ if __name__ == '__main__':
                                  "By default the script use GraphEvolveDroid architecture.")
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
-    argparser.add_argument('--num-epochs', type=int, default=5)
+    argparser.add_argument('--num-epochs', type=int, default=20)
     argparser.add_argument('--num-hidden', type=int, default=256)
     argparser.add_argument('--num-layers', type=int, default=2,
                             help="Number of gnn layers.")
@@ -295,6 +318,11 @@ if __name__ == '__main__':
                                 "on GPU when using it to save time for data copy. This may "
                                 "be undesired if they cannot fit in GPU memory at once. "
                                 "This flag disables that.")
+    # model ananlysis
+    argparser.add_argument('--timestamp', type=str, default='',
+                            help="Specify the name of trained model for testing/validation/analysis")
+    argparser.add_argument("--phase", type=str, default='train', choices=['train', 'test', 'val', 'analysis'],
+                        help="When phase is 'test', only test the model.")
     args = argparser.parse_args()
     assert args.model in ['ged', 'sage'], "Only ged(GraphEvolveDroid) and sage(GraphSAGE) are available."
     assert len(args.fan_out.split(',')) == args.num_layers, "Specify number of sampled neighbors for each layer."
@@ -318,9 +346,11 @@ if __name__ == '__main__':
     start = datetime.datetime.now()
     # Dataset directory. More detailed explanation see README.md
     # data_dir = "/home/sunrui/data/apigraph/vocabulary-2012"
-    data_dir = "/home/sunrui/data/GraphEvolveDroid"
-    feat_mtx = "drebin_feat_mtx.npz"
-    adj_mtx = "drebin_knn_5_T.npz"
+    # data_dir = "/home/sunrui/data/GraphEvolveDroid"
+    # feat_mtx = "drebin_feat_mtx.npz"
+    data_dir = "/home/sunrui/data/drebin"
+    feat_mtx = "drebin_feat.npz"
+    adj_mtx = "drebin_knn_5.npz"
     # adj_mtx = "drebin_rev_tf_knn_5.npz"
     file_path = (data_dir, feat_mtx, adj_mtx)
     print(file_path)
